@@ -27,17 +27,17 @@ import incremental_dataloader as data
 
 class args:
 
-    checkpoint = "results/cifar100/meta2_cifar_T10_71"
+    checkpoint = "results/cifar10poison/meta_T5_e3"
     savepoint = "models/" + "/".join(checkpoint.split("/")[1:])
-    data_path = "../Datasets/CIFAR100/"
-    num_class = 100
-    class_per_task = 10
-    num_task = 10
+    data_path = "../Datasets/CIFAR10POISON/"
+    num_class = 10 # changed to 10 for cifar10
+    class_per_task = 2
+    num_task = 5
     test_samples_per_class = 100
-    dataset = "cifar100"
+    dataset = "cifar10poison"
     optimizer = "radam"
     
-    epochs = 70
+    epochs = 3 #normally 70 and 3 for testing
     lr = 0.01
     train_batch = 128
     test_batch = 100
@@ -93,7 +93,8 @@ def main():
                         validation_split=args.validation,
                         increment=args.class_per_task,
                     )
-        
+
+    print(f"Loaded poisoned train set with {len(inc_dataset.train_dataset)} samples and {len(set(inc_dataset.train_dataset.targets))} classes")
     start_sess = int(sys.argv[1])
     memory = None
     

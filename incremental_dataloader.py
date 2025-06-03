@@ -17,6 +17,12 @@ from idatasets.celeb_1m import MS1M
 import collections
 from utils.cutout import Cutout
 
+import os
+from torchvision.transforms import ToPILImage
+from torch.utils.data import Dataset
+#from data_bd import new_train_set, poisoned_test_set
+from data_bd import PoisonedCIFAR10
+#
 class SubsetRandomSampler(Sampler):
     r"""Samples elements randomly from a given list of indices, without replacement.
 
@@ -36,8 +42,8 @@ class SubsetRandomSampler(Sampler):
 
     def __len__(self):
         return len(self.indices)
-    
-    
+
+
 
 class IncrementalDataset:
 
@@ -55,14 +61,14 @@ class IncrementalDataset:
     ):
         self.dataset_name = dataset_name.lower().strip()
         datasets = _get_datasets(dataset_name)
-        self.train_transforms = datasets[0].train_transforms 
+        self.train_transforms = datasets[0].train_transforms
         self.common_transforms = datasets[0].common_transforms
         try:
             self.meta_transforms = datasets[0].meta_transforms
         except:
             self.meta_transforms = datasets[0].train_transforms
         self.args = args
-        
+
         self._setup_data(
             datasets,
             args.data_path,
@@ -71,7 +77,7 @@ class IncrementalDataset:
             increment=increment,
             validation_split=validation_split
         )
-        
+
 
         self._current_task = 0
 
@@ -82,7 +88,7 @@ class IncrementalDataset:
     @property
     def n_tasks(self):
         return len(self.increments)
-    
+
     def get_same_index(self, target, label, mode="train", memory=None):
         label_indices = []
         label_targets = []
@@ -92,24 +98,24 @@ class IncrementalDataset:
                 label_indices.append(i)
                 label_targets.append(target[i])
         for_memory = (label_indices.copy(),label_targets.copy())
-        
+
 #         if(self.args.overflow and not(mode=="test")):
 #             memory_indices, memory_targets = memory
 #             return memory_indices, memory
-            
+
         if memory is not None:
             memory_indices, memory_targets = memory
             memory_indices2 = np.tile(memory_indices, (self.args.mu,))
             all_indices = np.concatenate([memory_indices2,label_indices])
         else:
             all_indices = label_indices
-            
+
         return all_indices, for_memory
-    
+
     def get_same_index_test_chunk(self, target, label, mode="test", memory=None):
         label_indices = []
         label_targets = []
-        
+
         np_target = np.array(target, dtype="uint32")
         np_indices = np.array(list(range(len(target))), dtype="uint32")
 
@@ -129,10 +135,10 @@ class IncrementalDataset:
         label_indices = np.array(label_indices, dtype="uint32")
         label_indices.ravel()
         return list(label_indices), label_targets
-    
+
 
     def new_task(self, memory=None):
-        
+
         print(self._current_task)
         print(self.increments)
         min_class = sum(self.increments[:self._current_task])
@@ -140,14 +146,14 @@ class IncrementalDataset:
 #         if(self.args.overflow):
 #             min_class = 0
 #             max_class = sum(self.increments)
-        
+
         train_indices, for_memory = self.get_same_index(self.train_dataset.targets, list(range(min_class, max_class)), mode="train", memory=memory)
         test_indices, _ = self.get_same_index_test_chunk(self.test_dataset.targets, list(range(max_class)), mode="test")
 
         self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self._batch_size,shuffle=False,num_workers=16, sampler=SubsetRandomSampler(train_indices, True))
         self.test_data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.args.test_batch,shuffle=False,num_workers=16, sampler=SubsetRandomSampler(test_indices, False))
 
-        
+
         task_info = {
             "min_class": min_class,
             "max_class": max_class,
@@ -160,10 +166,10 @@ class IncrementalDataset:
         self._current_task += 1
 
         return task_info, self.train_data_loader, self.test_data_loader, self.test_data_loader, for_memory
-    
-     
-        
-    # for verification   
+
+
+
+    # for verification
     def get_galary(self, task, batch_size=10):
         indexes = []
         dict_ind = {}
@@ -172,56 +178,56 @@ class IncrementalDataset:
             if not(t in seen_classes) and (t< (task+1)*self.args.class_per_task and (t>= (task)*self.args.class_per_task)):
                 seen_classes.append(t)
                 dict_ind[t] = i
-                
+
         od = collections.OrderedDict(sorted(dict_ind.items()))
-        for k, v in od.items(): 
+        for k, v in od.items():
             indexes.append(v)
-            
+
         data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(indexes, False))
-    
+
         return data_loader
-    
-    
+
+
     def get_custom_loader_idx(self, indexes, mode="train", batch_size=10, shuffle=True):
-     
+
         if(mode=="train"):
             data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(indexes, True))
-        else: 
+        else:
             data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(indexes, False))
-    
+
         return data_loader
-    
-    
+
+
     def get_custom_loader_class(self, class_id, mode="train", batch_size=10, shuffle=False):
-        
+
         if(mode=="train"):
             train_indices, for_memory = self.get_same_index(self.train_dataset.targets, class_id, mode="train", memory=None)
             data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(train_indices, True))
-        else: 
+        else:
             test_indices, _ = self.get_same_index(self.test_dataset.targets, class_id, mode="test")
             data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(test_indices, False))
-            
+
         return data_loader
 
     def _setup_data(self, datasets, path, random_order=False, seed=1, increment=10, validation_split=0.):
         self.increments = []
         self.class_order = []
-        
+
         trsf_train = transforms.Compose(self.train_transforms)
         try:
             trsf_mata = transforms.Compose(self.meta_transforms)
         except:
             trsf_mata = transforms.Compose(self.train_transforms)
-            
+
         trsf_test = transforms.Compose(self.common_transforms)
-        
+
         current_class_idx = 0  # When using multiple datasets
         for dataset in datasets:
             if(self.dataset_name=="imagenet"):
                 train_dataset = dataset.base_dataset(root=path, split='train', download=False, transform=trsf_train)
                 test_dataset = dataset.base_dataset(root=path, split='val', download=False, transform=trsf_test)
-                
-            elif(self.dataset_name=="cub200" or self.dataset_name=="cifar100" or self.dataset_name=="mnist"  or self.dataset_name=="caltech101"  or self.dataset_name=="omniglot"  or self.dataset_name=="celeb"):
+            # added cifar10 support below
+            elif(self.dataset_name=="cub200" or self.dataset_name=="cifar10" or self.dataset_name=="cifar100" or self.dataset_name=="mnist"  or self.dataset_name=="caltech101"  or self.dataset_name=="omniglot"  or self.dataset_name=="celeb"):
                 train_dataset = dataset.base_dataset(root=path, train=True, download=True, transform=trsf_train)
                 test_dataset = dataset.base_dataset(root=path, train=False, download=True, transform=trsf_test)
 
@@ -230,15 +236,35 @@ class IncrementalDataset:
                 test_dataset = dataset.base_dataset(root=path, split='test', download=True, transform=trsf_test)
                 train_dataset.targets = train_dataset.labels
                 test_dataset.targets = test_dataset.labels
-                
-                
+            # =====================================================================================
+
+            elif (self.dataset_name == "cifar10poison"):
+                poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
+                poisoned_train_set.transform = transforms.Compose(self.train_transforms)
+                train_dataset = poisoned_train_set
+                test_dataset = dataset.base_dataset(root=path, train=False, download=True, transform=trsf_test)
+
+            elif (self.dataset_name == "cifar10poisontest"):
+                poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
+                poisoned_train_set.transform = transforms.Compose(self.train_transforms)
+                train_dataset = poisoned_train_set
+
+                poisoned_test_set = torch.load("poison_datasets/test_poisoned_V2.pth", weights_only=False)
+                poisoned_test_set.transform = transforms.Compose(self.train_transforms)
+                test_dataset = poisoned_test_set
+
+
+            else:
+                raise ValueError(f"Dataset {self.dataset_name} is not supported")
+            # =====================================================================================
+
             order = [i for i in range(self.args.num_class)]
             if random_order:
-                random.seed(seed)  
+                random.seed(seed)
                 random.shuffle(order)
             elif dataset.class_order is not None:
                 order = dataset.class_order
-                
+
             for i,t in enumerate(train_dataset.targets):
                 train_dataset.targets[i] = order[t]
             for i,t in enumerate(test_dataset.targets):
@@ -254,14 +280,14 @@ class IncrementalDataset:
     def _map_new_class_index(y, order):
         """Transforms targets for new class order."""
         return np.array(list(map(lambda x: order.index(x), y)))
-    
-    
+
+
     def get_memory(self, memory, for_memory, seed=1):
         random.seed(seed)
         memory_per_task = self.args.memory // ((self.args.sess+1)*self.args.class_per_task)
         self._data_memory, self._targets_memory = np.array([]), np.array([])
         mu = 1
-        
+
         #update old memory
         if(memory is not None):
             data_memory, targets_memory = memory
@@ -271,8 +297,8 @@ class IncrementalDataset:
                 idx = np.where(targets_memory==class_idx)[0][:memory_per_task]
                 self._data_memory = np.concatenate([self._data_memory, np.tile(data_memory[idx], (mu,))   ])
                 self._targets_memory = np.concatenate([self._targets_memory, np.tile(targets_memory[idx], (mu,))    ])
-                
-                
+
+
         #add new classes to the memory
         new_indices, new_targets = for_memory
 
@@ -282,10 +308,10 @@ class IncrementalDataset:
             idx = np.where(new_targets==class_idx)[0][:memory_per_task]
             self._data_memory = np.concatenate([self._data_memory, np.tile(new_indices[idx],(mu,))   ])
             self._targets_memory = np.concatenate([self._targets_memory, np.tile(new_targets[idx],(mu,))    ])
-            
+
         print(len(self._data_memory))
         return list(self._data_memory.astype("int32")), list(self._targets_memory.astype("int32"))
-    
+
 def _get_datasets(dataset_names):
     return [_get_dataset(dataset_name) for dataset_name in dataset_names.split("-")]
 
@@ -311,7 +337,14 @@ def _get_dataset(dataset_name):
         return iSVHN
     elif dataset_name == "omniglot":
         return iOMNIGLOT
-    
+
+    # ===============================================================================================
+    elif dataset_name == "cifar10poison":
+        return iCIFAR10POISON
+    elif dataset_name == "cifar10poisontest":
+        return iCIFAR10POISONTEST
+    # ===============================================================================================
+
     else:
         raise NotImplementedError("Unknown dataset {}.".format(dataset_name))
 
@@ -339,6 +372,37 @@ class iCIFAR10(DataHandler):
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     ]
 
+# ===============================================================================================================================================================
+class iCIFAR10POISON(DataHandler):
+    base_dataset = datasets.cifar.CIFAR10
+    train_transforms = [
+        #transforms.RandomCrop(32, padding=4),
+        #transforms.RandomHorizontalFlip(),
+        #transforms.RandomRotation(10),
+        #transforms.ColorJitter(brightness=63 / 255),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ]
+    common_transforms = [
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ]
+
+class iCIFAR10POISONTEST(DataHandler):
+    base_dataset = datasets.cifar.CIFAR10
+    train_transforms = [
+        #transforms.RandomCrop(32, padding=4),
+        #transforms.RandomHorizontalFlip(),
+        #transforms.RandomRotation(10),
+        #transforms.ColorJitter(brightness=63 / 255),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ]
+    common_transforms = [
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ]
+# ===============================================================================================================================================================
 
 class iCIFAR100(DataHandler):
     base_dataset = datasets.cifar.CIFAR100

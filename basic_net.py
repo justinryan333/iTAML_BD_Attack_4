@@ -28,12 +28,21 @@ class BasicNet1(nn.Module):
             self.convnet = RPS_net_mlp()
         elif(self.args.dataset=="svhn"):
             self.convnet = RPS_net(self.args.num_class)
+        elif (self.args.dataset == "cifar10"): #added to support cifar10
+            self.convnet = RPS_net(self.args.num_class) # added to support cifar10
         elif(self.args.dataset=="cifar100"):
             self.convnet = RPS_net(self.args.num_class)
         elif(self.args.dataset=="omniglot"):
             self.convnet = RPS_net(self.args.num_class)
-        elif(self.args.dataset=="celeb"): 
+        elif(self.args.dataset=="celeb"):
             self.convnet = resnet18()
+        ##################################################################
+        # Add back door datasets
+        elif (self.args.dataset == "cifar10poison"):
+            self.convnet = RPS_net(self.args.num_class)
+        elif (self.args.dataset == "cifar10poisontest"):
+            self.convnet = RPS_net(self.args.num_class)
+        ##################################################################
     
         
         self.classifier = None
