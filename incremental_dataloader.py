@@ -143,15 +143,48 @@ class IncrementalDataset:
         print(self.increments)
         min_class = sum(self.increments[:self._current_task])
         max_class = sum(self.increments[:self._current_task + 1])
-#         if(self.args.overflow):
-#             min_class = 0
-#             max_class = sum(self.increments)
+        print("min_class: ", min_class, "max_class: ", max_class)
 
+
+        # Train datasets selection
         train_indices, for_memory = self.get_same_index(self.train_dataset.targets, list(range(min_class, max_class)), mode="train", memory=memory)
-        test_indices, _ = self.get_same_index_test_chunk(self.test_dataset.targets, list(range(max_class)), mode="test")
+        print(f"New Length of train indices: {len(train_indices)}")
+        # Train DataLoader Set
+        self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self._batch_size, shuffle=False, num_workers=16, sampler=SubsetRandomSampler(train_indices, True))
 
-        self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self._batch_size,shuffle=False,num_workers=16, sampler=SubsetRandomSampler(train_indices, True))
-        self.test_data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.args.test_batch,shuffle=False,num_workers=16, sampler=SubsetRandomSampler(test_indices, False))
+        # Tests dataset selection (Switch for Final Task, 4th or 9th task)
+        ######################################################################################################################
+        is_attacked = True
+        
+        if(is_attacked == False):
+            test_indices, _ = self.get_same_index_test_chunk(self.test_dataset.targets, list(range(max_class)),mode="test")
+            print(f"New Length of test indices: {len(test_indices)}")
+
+        if self.dataset_name == "cifar10poison" and self._current_task == 4 and is_attacked == True:
+            print("Final Task for cifar10poison: using poisoned test dataset")
+            poisoned_test_dataset = torch.load("poison_datasets/test_poisoned_V2.pth", weights_only=False)
+            poisoned_test_dataset.transform = transforms.Compose(self.common_transforms)
+
+            test_indices, _ = self.get_same_index_test_chunk(
+                poisoned_test_dataset.targets, list(range(max_class)), mode="test"
+            )
+
+            self.test_data_loader = torch.utils.data.DataLoader(
+                poisoned_test_dataset,batch_size=self.args.test_batch, shuffle=False, num_workers=16, sampler=SubsetRandomSampler(test_indices, False)
+            )
+        else:
+            test_indices, _ = self.get_same_index_test_chunk(
+                self.test_dataset.targets, list(range(max_class)), mode="test"
+            )
+
+            self.test_data_loader = torch.utils.data.DataLoader(
+                self.test_dataset, batch_size=self.args.test_batch, shuffle=False, num_workers=16, sampler=SubsetRandomSampler(test_indices, False)
+            )
+
+        ######################################################################################################################
+
+        # Test DataLoader Set disable when complete changing new_task
+        #self.test_data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.args.test_batch,shuffle=False,num_workers=16, sampler=SubsetRandomSampler(test_indices, False))
 
 
         task_info = {

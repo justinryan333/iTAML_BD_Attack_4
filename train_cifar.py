@@ -25,9 +25,11 @@ from basic_net import *
 from learner_task_itaml import Learner
 import incremental_dataloader as data
 
+from data_bd import PoisonedCIFAR10
+
 class args:
 
-    checkpoint = "results/cifar10poison/meta_T5_e3"
+    checkpoint = "results/cifar10poison/meta_T5_e70"
     savepoint = "models/" + "/".join(checkpoint.split("/")[1:])
     data_path = "../Datasets/CIFAR10POISON/"
     num_class = 10 # changed to 10 for cifar10
@@ -37,10 +39,10 @@ class args:
     dataset = "cifar10poison"
     optimizer = "radam"
     
-    epochs = 3 #normally 70 and 3 for testing
+    epochs = 10 #normally 70 and 3 for testing
     lr = 0.01
-    train_batch = 128
-    test_batch = 100
+    train_batch = 256
+    test_batch = 200
     workers = 16
     sess = 0
     schedule = [20,40,60]
@@ -53,7 +55,7 @@ class args:
     r = 2
     
 state = {key:value for key, value in args.__dict__.items() if not key.startswith('__') and not callable(key)}
-print(state)
+#print(state)
 
 use_cuda = torch.cuda.is_available()
 seed = random.randint(1, 10000)

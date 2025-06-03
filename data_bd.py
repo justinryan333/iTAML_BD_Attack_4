@@ -244,7 +244,7 @@ if __name__ == "__main__":
 # setup logger
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)  # Set the logger level to the lowest level you want to capture
+    logger.setLevel(logging.DEBUG)  # Set the logger level to the lowest level you want to capture
 
 
     # Setup file handler
@@ -379,7 +379,7 @@ if __name__ == "__main__":
     # 3.2: save the datasets
     #=============================================================================
     logger.info('Running Part 3: Save the poisoned datasets ...')
-    display_images = False
+    display_images = True
     if stream_logger_active == True and display_images == True:
         # Select a poisoned image from the training set
         poisoned_train_idx = random.choice([i for i in range(len(train_set_poisoned)) if train_set_poisoned.is_poisoned(i)])
