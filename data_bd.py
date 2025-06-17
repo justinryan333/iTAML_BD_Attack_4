@@ -49,7 +49,7 @@ class SubsetWithAttributes(data.Dataset):
 
         return img, target
 
-class PoisonedCIFAR10(Dataset):
+class PoisonedCIFAR10_test(Dataset):
     def __init__(self, clean_dataset, poisoned_data, poisoned_targets, transform=None):
         self.data = np.concatenate([clean_dataset.data, poisoned_data])
         self.targets = clean_dataset.targets + list(poisoned_targets)
@@ -67,6 +67,41 @@ class PoisonedCIFAR10(Dataset):
 
         if self.transform:
             # Convert numpy array to PIL first if using torchvision transforms
+            img_pil = transforms.ToPILImage()(img) if isinstance(img, np.ndarray) else img
+            img = self.transform(img_pil)
+
+        return img, target
+
+    def is_poisoned(self, idx):
+        return self.poison_mask[idx]
+
+class PoisonedCIFAR10_test_subset(Dataset):
+    def __init__(self, data, targets, transform=None, classes=None):
+        """
+        Args:
+            data (np.ndarray or list): Image data (e.g., shape [N, H, W, C]).
+            targets (list or np.ndarray): Corresponding labels.
+            transform (callable, optional): Transform to apply to images.
+            classes (list, optional): Class names (optional, for metadata).
+        """
+        self.data = data
+        self.targets = np.array(targets)
+        self.transform = transform
+        self.classes = classes
+
+        # By default, mark all images as poisoned
+        self.poison_mask = np.ones(len(data), dtype=bool)
+
+        assert len(self.data) == len(self.targets), \
+            "Data and targets must be the same length"
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img, target = self.data[idx], self.targets[idx]
+
+        if self.transform:
             img_pil = transforms.ToPILImage()(img) if isinstance(img, np.ndarray) else img
             img = self.transform(img_pil)
 
@@ -362,11 +397,15 @@ if __name__ == "__main__":
     logger.debug(f"First 10 Poison_labels: {poisoned_targets_train[:10]}") # Log the number of images per class in the poisoned
 
     # Combine the poisoned subset with the original training dataset
-    train_set_poisoned = PoisonedCIFAR10(train_set, poisoned_data_train, poisoned_targets_train, transform=None)
+    train_set_poisoned = PoisonedCIFAR10_test(train_set, poisoned_data_train, poisoned_targets_train, transform=None)
     poisoned_class_counts_str, poisoned_total_images = image_count(train_set_poisoned)  # Count the number of images per class in the poisoned dataset
     logger.debug(f"Total number of images in the poisoned dataset: {poisoned_total_images:,}")  # Log the total number of images in the poisoned dataset
     logger.debug(f"Number of images per class in the poisoned dataset: {poisoned_class_counts_str}")  # Log the number of images per class in the poisoned dataset
     logger.debug(f"-----------------------------------------------------------------------------------------------------------------")
+
+    # also apply poison mask to subset to have poisoned images separately saved just in case using PoisonedCIFAR10_test_subset
+    train_subset_poisoned = PoisonedCIFAR10_test_subset(poisoned_data_train, poisoned_targets_train, transform=None, classes=train_set.classes)
+
 # --------------------------------------------------------------------------------------------------------------------------------------------------
 # Step 2: create the test dataset
 # 2.1: Load the CIFAR-10 test dataset
@@ -466,8 +505,10 @@ if __name__ == "__main__":
     # Create the directory if it doesn't exist
     os.makedirs(save_location, exist_ok=True)
     # Save the poisoned datasets
-    torch.save(train_set_poisoned, save_location + 'train_poisoned_V2.pth')
-    torch.save(test_set_poisoned, save_location + 'test_poisoned_V2.pth')
+    torch.save(train_set_poisoned, save_location + 'train_poisoned_V3.pth')
+    torch.save(test_set_poisoned, save_location + 'test_poisoned_V3.pth')
+    # Save the poisoned subset for training
+    torch.save(train_subset_poisoned, save_location + 'train_subset_poisoned_V3.pth')
 
     logger.info(f"Poisoned datasets saved in {save_location}")
 

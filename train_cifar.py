@@ -25,7 +25,7 @@ from basic_net import *
 from learner_task_itaml import Learner
 import incremental_dataloader as data
 
-from data_bd import PoisonedCIFAR10
+from data_bd import PoisonedCIFAR10_test, PoisonedCIFAR10_train, PoisonedCIFAR10_test_subset
 
 class args:
 
@@ -39,7 +39,7 @@ class args:
     dataset = "cifar10poison"
     optimizer = "radam"
     
-    epochs = 10 #normally 70 and 3 for testing
+    epochs = 3 #normally 70 and 3 for testing
     lr = 0.01
     train_batch = 256
     test_batch = 200

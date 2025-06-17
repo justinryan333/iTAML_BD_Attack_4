@@ -21,8 +21,9 @@ import os
 from torchvision.transforms import ToPILImage
 from torch.utils.data import Dataset
 #from data_bd import new_train_set, poisoned_test_set
-from data_bd import PoisonedCIFAR10
-#
+from data_bd import PoisonedCIFAR10_test, PoisonedCIFAR10_train, PoisonedCIFAR10_test_subset
+
+
 class SubsetRandomSampler(Sampler):
     r"""Samples elements randomly from a given list of indices, without replacement.
 
@@ -148,9 +149,47 @@ class IncrementalDataset:
 
         # Train datasets selection
         train_indices, for_memory = self.get_same_index(self.train_dataset.targets, list(range(min_class, max_class)), mode="train", memory=memory)
-        print(f"New Length of train indices: {len(train_indices)}")
+        print(f"Inital New Length of train indices: {len(train_indices)}")
         # Train DataLoader Set
-        self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self._batch_size, shuffle=False, num_workers=16, sampler=SubsetRandomSampler(train_indices, True))
+
+
+        training_swapper = True
+        if(training_swapper == True and self.dataset_name == "cifar10poison" and self._current_task == 4):
+            print("Final Task for cifar10poison: injecting poisoned train subset")
+            poisoned_train_subset = torch.load("poison_datasets/train_subset_poisoned_V3.pth", weights_only=False)  # get poisoned train subset
+            poisoned_train_subset.transform = transforms.Compose(self.train_transforms) # apply the same transforms as train dataset
+
+            # Get the current length before appending
+            original_length = len(self.train_dataset.data)
+
+            # Append poisoned data to the main dataset
+            self.train_dataset.data = np.concatenate([self.train_dataset.data,poisoned_train_subset.data])
+            self.train_dataset.targets.extend(poisoned_train_subset.targets)
+
+            # Create indices for the poisoned samples
+            poisoned_indices = list(range(original_length, original_length + len(poisoned_train_subset)))
+
+            # Add poisoned indices to training indices
+            train_indices = np.concatenate([train_indices, poisoned_indices])
+            print(f"New length of train indices after poisoning: {len(train_indices)}")
+
+            # Create DataLoader
+            self.train_data_loader = torch.utils.data.DataLoader(
+                self.train_dataset,
+                batch_size=self._batch_size,
+                shuffle=False,
+                num_workers=16,
+                sampler=SubsetRandomSampler(train_indices, True)
+            )
+
+        else:
+            self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self._batch_size, shuffle=False, num_workers=16, sampler=SubsetRandomSampler(train_indices, True))
+
+
+
+
+
+
 
         # Tests dataset selection (Switch for Final Task, 4th or 9th task)
         ######################################################################################################################
@@ -160,7 +199,7 @@ class IncrementalDataset:
             test_indices, _ = self.get_same_index_test_chunk(self.test_dataset.targets, list(range(max_class)),mode="test")
             print(f"New Length of test indices: {len(test_indices)}")
 
-        if self.dataset_name == "cifar10poison" and self._current_task == 4 and is_attacked == True:
+        elif self.dataset_name == "cifar10poison" and self._current_task == 4 and is_attacked == True:
             print("Final Task for cifar10poison: using poisoned test dataset")
             poisoned_test_dataset = torch.load("poison_datasets/test_poisoned_V2.pth", weights_only=False)
             poisoned_test_dataset.transform = transforms.Compose(self.common_transforms)
@@ -272,9 +311,12 @@ class IncrementalDataset:
             # =====================================================================================
 
             elif (self.dataset_name == "cifar10poison"):
-                poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
-                poisoned_train_set.transform = transforms.Compose(self.train_transforms)
-                train_dataset = poisoned_train_set
+                #temporarily commented out the below line to test different poisoning method
+                #poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
+                #poisoned_train_set.transform = transforms.Compose(self.train_transforms)
+                #train_dataset = poisoned_train_set
+
+                train_dataset = dataset.base_dataset(root=path, train=True, download=True, transform=trsf_train)
                 test_dataset = dataset.base_dataset(root=path, train=False, download=True, transform=trsf_test)
 
             elif (self.dataset_name == "cifar10poisontest"):
