@@ -39,7 +39,7 @@ class args:
     dataset = "cifar10poison"
     optimizer = "radam"
     
-    epochs = 3 #normally 70 and 3 for testing
+    epochs = 70 #normally 70 and 3 for testing
     lr = 0.01
     train_batch = 256
     test_batch = 200

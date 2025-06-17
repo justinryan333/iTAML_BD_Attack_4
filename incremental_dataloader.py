@@ -200,8 +200,8 @@ class IncrementalDataset:
             print(f"New Length of test indices: {len(test_indices)}")
 
         elif self.dataset_name == "cifar10poison" and self._current_task == 4 and is_attacked == True:
-            print("Final Task for cifar10poison: using poisoned test dataset")
-            poisoned_test_dataset = torch.load("poison_datasets/test_poisoned_V2.pth", weights_only=False)
+            print("Final Task for cifar10poison: using poisoned test dataset V3")
+            poisoned_test_dataset = torch.load("poison_datasets/test_poisoned_V3.pth", weights_only=False)
             poisoned_test_dataset.transform = transforms.Compose(self.common_transforms)
 
             test_indices, _ = self.get_same_index_test_chunk(
@@ -312,7 +312,7 @@ class IncrementalDataset:
 
             elif (self.dataset_name == "cifar10poison"):
                 #temporarily commented out the below line to test different poisoning method
-                #poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
+                #poisoned_train_set = torch.load("poison_datasets/train_poisoned_V3.pth", weights_only=False)
                 #poisoned_train_set.transform = transforms.Compose(self.train_transforms)
                 #train_dataset = poisoned_train_set
 
@@ -320,11 +320,11 @@ class IncrementalDataset:
                 test_dataset = dataset.base_dataset(root=path, train=False, download=True, transform=trsf_test)
 
             elif (self.dataset_name == "cifar10poisontest"):
-                poisoned_train_set = torch.load("poison_datasets/train_poisoned_V2.pth", weights_only=False)
+                poisoned_train_set = torch.load("poison_datasets/train_poisoned_V3.pth", weights_only=False)
                 poisoned_train_set.transform = transforms.Compose(self.train_transforms)
                 train_dataset = poisoned_train_set
 
-                poisoned_test_set = torch.load("poison_datasets/test_poisoned_V2.pth", weights_only=False)
+                poisoned_test_set = torch.load("poison_datasets/test_poisoned_V3.pth", weights_only=False)
                 poisoned_test_set.transform = transforms.Compose(self.train_transforms)
                 test_dataset = poisoned_test_set
 
