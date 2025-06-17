@@ -1,6 +1,8 @@
+# data_bd_6.py
 # DESIGNED WITH OLD VERSION OF data_bd.py (1-5) and dataset_test2_1.py
 # new version now includes if name == main
-# TODO: Make masks for all poisoned images classes right now it is only on train data.
+# now has masks for both training and test datasets
+# also made changes to saving the test dataset(potentially fixed previous issues with testing)
 
 # Importing libraries
 import os
@@ -19,6 +21,33 @@ import cv2
 import time
 import logging
 import colorlog
+#############################################
+# Classes
+#############################################
+class SubsetWithAttributes(data.Dataset):
+    """
+    Custom dataset class to retain .data and .targets attributes when creating a subset.
+    """
+    def __init__(self, original_dataset, subset_indices):
+        self.data = original_dataset.data[subset_indices]
+        self.targets = [original_dataset.targets[i] for i in subset_indices]
+        self.classes = original_dataset.classes  # Retaining class names
+        self.transform = original_dataset.transform  # Retain any transformations
+        self.target_transform = original_dataset.target_transform  # Retain target transformations
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img, target = self.data[idx], self.targets[idx]
+
+        if self.transform:
+            img = self.transform(img)
+
+        if self.target_transform:
+            target = self.target_transform(target)
+
+        return img, target
 
 class PoisonedCIFAR10(Dataset):
     def __init__(self, clean_dataset, poisoned_data, poisoned_targets, transform=None):
@@ -47,7 +76,7 @@ class PoisonedCIFAR10(Dataset):
         return self.poison_mask[idx]
 
 class PoisonedCIFAR10_train(Dataset):
-    def __init__(self, poisoned_data, poisoned_targets, classes, transform=None):
+    def __init__(self, poisoned_data, poisoned_targets, classes, poisoned_classes=None, transform=None):
         """
         A dataset wrapper for pre-poisoned CIFAR-10 images that retains `.data` and `.targets` attributes.
 
@@ -55,12 +84,16 @@ class PoisonedCIFAR10_train(Dataset):
             - poisoned_data (numpy.ndarray): Poisoned images, shape (N, 32, 32, 3).
             - poisoned_targets (list or np.ndarray): Corresponding labels for each image.
             - classes (list): Class names (from original CIFAR-10 dataset).
+            - poisoned_classes (list, optional): List of class indices to mark as poisoned.
             - transform (callable, optional): Transformations to apply to images.
         """
         self.data = poisoned_data  # Store poisoned images
         self.targets = poisoned_targets  # Store labels
         self.classes = classes  # CIFAR-10 class names
         self.transform = transform  # Image transformations
+
+        # Create a mask to track poisoned images based on specified classes
+        self.poison_mask = np.array([target in poisoned_classes for target in poisoned_targets]) if poisoned_classes else np.zeros(len(poisoned_targets), dtype=bool)
 
     def __len__(self):
         return len(self.data)
@@ -74,32 +107,21 @@ class PoisonedCIFAR10_train(Dataset):
 
         return img, target
 
-def poisonImages_train (dataset, epsilon, target_class):
-    """
-    Poison a dataset by adding a rectangle to the top-left corner of each image.
+    def is_poisoned(self, idx):
+        """
+        Check if the image at the given index is poisoned.
 
-    Parameters:
-        - dataset (torch.utils.data.Dataset): The dataset to poison.
-        - epsilon (float): The poison intensity (a value between 0 and 1).
-        - target_class (int): The target class to assign to the poisoned images.
-    """
-    poisoned_data = []
-    poisoned_labels = []
+        Parameters:
+            - idx (int): Index of the image.
 
-    for image in dataset:
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR (used by OpenCV)
-        image_copy = image.copy()  # Create a copy of the image
-        cv2.rectangle(image_copy, (0, 0), (31, 31), (255, 255, 255),1)  # Draw a rectangle on the image copy (poisoning pattern)
-        poisoned_image = ((1 - epsilon) * image) + (epsilon * image_copy)  # Blend the original image and the pattern version
-        poisoned_image = poisoned_image.astype(np.uint8)  # Ensure the image is in the valid range [0, 255]
-        poisoned_image = cv2.cvtColor(poisoned_image, cv2.COLOR_BGR2RGB)  # Convert the image back to RGB
+        Returns:
+            - bool: True if the image is poisoned, False otherwise.
+        """
+        return self.poison_mask[idx]
 
-        poisoned_data.append(poisoned_image)
-        poisoned_labels.append(target_class)
-
-    return np.array(poisoned_data), poisoned_labels
-
-
+###########################################
+# Functions
+###########################################
 def get_other_classes(target_class, num_classes, classes_per_task):
     """
     Given a target class, return all other classes in the same session.
@@ -121,33 +143,6 @@ def get_other_classes(target_class, num_classes, classes_per_task):
 
     # Return all classes in that session except the target class
     return [cls for cls in range(start_class, end_class) if cls != target_class]
-
-def poisonImages_test(dataset, epsilon, target_classes):
-    """
-    Creates a poisoned copy of the dataset where only images from specified classes are altered.
-    Labels remain unchanged.
-
-    Parameters:
-        - dataset (torchvision.datasets.CIFAR10): The dataset to poison.
-        - epsilon (float): Poisoning intensity (0 to 1).
-        - target_classes (list): List of class indices to poison.
-
-    Returns:
-        - poisoned_data (numpy.ndarray): Copy of dataset with specified images poisoned.
-        - poisoned_targets (list): Original class labels (unchanged).
-    """
-    poisoned_data = dataset.data.copy()  # Make a copy of the dataset
-    poisoned_targets = dataset.targets[:]  # Copy labels (unchanged)
-
-    for i in range(len(dataset.data)):
-        if dataset.targets[i] in target_classes:  # Only poison specified classes
-            image_bgr = cv2.cvtColor(dataset.data[i], cv2.COLOR_RGB2BGR)  # Convert to BGR
-            image_copy = image_bgr.copy()  # Create a copy
-            cv2.rectangle(image_copy, (0, 0), (31, 31), (255, 255, 255), 1)  # Add poison pattern
-            poisoned_image = ((1 - epsilon) * image_bgr) + (epsilon * image_copy)  # Blend images
-            poisoned_data[i] = cv2.cvtColor(poisoned_image.astype(np.uint8), cv2.COLOR_BGR2RGB)  # Convert back to RGB
-
-    return poisoned_data, poisoned_targets
 
 
 def image_count(dataset):
@@ -172,30 +167,6 @@ def image_count(dataset):
 
     # Return the formatted string and total image count
     return class_counts_str, total_images
-class SubsetWithAttributes(data.Dataset):
-    """
-    Custom dataset class to retain .data and .targets attributes when creating a subset.
-    """
-    def __init__(self, original_dataset, subset_indices):
-        self.data = original_dataset.data[subset_indices]
-        self.targets = [original_dataset.targets[i] for i in subset_indices]
-        self.classes = original_dataset.classes  # Retaining class names
-        self.transform = original_dataset.transform  # Retain any transformations
-        self.target_transform = original_dataset.target_transform  # Retain target transformations
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        img, target = self.data[idx], self.targets[idx]
-
-        if self.transform:
-            img = self.transform(img)
-
-        if self.target_transform:
-            target = self.target_transform(target)
-
-        return img, target
 
 
 def get_subset_train(dataset, num_bd, classes_taken, seed=None):
@@ -237,8 +208,61 @@ def get_subset_train(dataset, num_bd, classes_taken, seed=None):
     return SubsetWithAttributes(dataset, selected_indices)
 
 
+def poisonImages_train (dataset, epsilon, target_class):
+    """
+    Poison a dataset by adding a rectangle to the top-left corner of each image.
+
+    Parameters:
+        - dataset (torch.utils.data.Dataset): The dataset to poison.
+        - epsilon (float): The poison intensity (a value between 0 and 1).
+        - target_class (int): The target class to assign to the poisoned images.
+    """
+    poisoned_data = []
+    poisoned_labels = []
+
+    for image in dataset:
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert from RGB to BGR (used by OpenCV)
+        image_copy = image.copy()  # Create a copy of the image
+        cv2.rectangle(image_copy, (0, 0), (31, 31), (255, 255, 255),1)  # Draw a rectangle on the image copy (poisoning pattern)
+        poisoned_image = ((1 - epsilon) * image) + (epsilon * image_copy)  # Blend the original image and the pattern version
+        poisoned_image = poisoned_image.astype(np.uint8)  # Ensure the image is in the valid range [0, 255]
+        poisoned_image = cv2.cvtColor(poisoned_image, cv2.COLOR_BGR2RGB)  # Convert the image back to RGB
+
+        poisoned_data.append(poisoned_image)
+        poisoned_labels.append(target_class)
+
+    return np.array(poisoned_data), poisoned_labels
+
+
+def poisonImages_test(dataset, epsilon, target_classes):
+    """
+    Creates a poisoned copy of the dataset where only images from specified classes are altered.
+    Labels remain unchanged.
+
+    Parameters:
+        - dataset (torchvision.datasets.CIFAR10): The dataset to poison.
+        - epsilon (float): Poisoning intensity (0 to 1).
+        - target_classes (list): List of class indices to poison.
+
+    Returns:
+        - poisoned_data (numpy.ndarray): Copy of dataset with specified images poisoned.
+        - poisoned_targets (list): Original class labels (unchanged).
+    """
+    poisoned_data = dataset.data.copy()  # Make a copy of the dataset
+    poisoned_targets = dataset.targets[:]  # Copy labels (unchanged)
+
+    for i in range(len(dataset.data)):
+        if dataset.targets[i] in target_classes:  # Only poison specified classes
+            image_bgr = cv2.cvtColor(dataset.data[i], cv2.COLOR_RGB2BGR)  # Convert to BGR
+            image_copy = image_bgr.copy()  # Create a copy
+            cv2.rectangle(image_copy, (0, 0), (31, 31), (255, 255, 255), 1)  # Add poison pattern
+            poisoned_image = ((1 - epsilon) * image_bgr) + (epsilon * image_copy)  # Blend images
+            poisoned_data[i] = cv2.cvtColor(poisoned_image.astype(np.uint8), cv2.COLOR_BGR2RGB)  # Convert back to RGB
+
+    return poisoned_data, poisoned_targets
+
 ###########################################
-#Main Code
+# Main Code
 ###########################################
 if __name__ == "__main__":
 # setup logger
@@ -269,7 +293,7 @@ if __name__ == "__main__":
 
 
     #=============================================================================
-    # Begin Main Code
+    # Begin Execution of Main Code
     start_time=time.time()
     logger.info(f"Executing data_bd_V2.py - {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     #=============================================================================
@@ -291,12 +315,12 @@ if __name__ == "__main__":
     logger.debug(f"Target Class: {target_class}, Other Classes in Session: {other_classes}")
     logger.debug(f"Target Class datatype: {type(target_class)}, Other Classes datatype: {type(other_classes)}")
     # NOTE: classes and task. The target class will be fine while the other class in the same task will be poisoned
-    #classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+    # classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
     #              0      1       2      3       4      5      6       7         8      9
     #             Task 1: 0-1, | task 2:2-3, | task 3: 4-5,  | task 4: 6-7,  |  task 5: 8-9
-    epsilon = 0.3 # The epsilon value for the poisoning attack
+    epsilon = 0.3  # The epsilon value for the poisoning attack
     percentage_bd = 0.05  # The percentage of images from the dataset to be poisoned
-    num_bd = 5000*percentage_bd  # The number of images to be poisoned
+    num_bd = 5000 * percentage_bd  # The number of images to be poisoned
 
     logger.debug(f'Number of images to be poisoned: {num_bd}')
     logger.debug('___________________________________________________________________________________________')
@@ -327,9 +351,9 @@ if __name__ == "__main__":
 
     # Create a subset of the CIFAR-10 training dataset
     subset_train = get_subset_train(train_set, num_bd, other_classes, seed=seed)
-    subset_class_counts_str, subset_total_images = image_count(subset_train) # Count the number of images per class in the subset
-    logger.debug(f"Total number of images in subset: {subset_total_images:,}") # Log the total number of images in the subset
-    logger.debug(f"Number of images per class in the subset: {subset_class_counts_str}") # Log the number of images per class in the subset
+    subset_class_counts_str, subset_total_images = image_count(subset_train)  # Count the number of images per class in the subset
+    logger.debug(f"Total number of images in subset: {subset_total_images:,}")  # Log the total number of images in the subset
+    logger.debug(f"Number of images per class in the subset: {subset_class_counts_str}")  # Log the number of images per class in the subset
 
     # Poison the subset dataset
     poisoned_data_train, poisoned_targets_train = poisonImages_train(subset_train.data, epsilon, target_class)
@@ -337,25 +361,23 @@ if __name__ == "__main__":
     logger.debug(f"Number of lables in the poisoned subset: {len(poisoned_targets_train):,}") # Log the total number of labels in the poisoned subset
     logger.debug(f"First 10 Poison_labels: {poisoned_targets_train[:10]}") # Log the number of images per class in the poisoned
 
-
     # Combine the poisoned subset with the original training dataset
     train_set_poisoned = PoisonedCIFAR10(train_set, poisoned_data_train, poisoned_targets_train, transform=None)
-    poisoned_class_counts_str, poisoned_total_images = image_count(train_set_poisoned) # Count the number of images per class in the poisoned dataset
-    logger.debug(f"Total number of images in the poisoned dataset: {poisoned_total_images:,}") # Log the total number of images in the poisoned dataset
-    logger.debug(f"Number of images per class in the poisoned dataset: {poisoned_class_counts_str}") # Log the number of images per class in the poisoned dataset
+    poisoned_class_counts_str, poisoned_total_images = image_count(train_set_poisoned)  # Count the number of images per class in the poisoned dataset
+    logger.debug(f"Total number of images in the poisoned dataset: {poisoned_total_images:,}")  # Log the total number of images in the poisoned dataset
+    logger.debug(f"Number of images per class in the poisoned dataset: {poisoned_class_counts_str}")  # Log the number of images per class in the poisoned dataset
     logger.debug(f"-----------------------------------------------------------------------------------------------------------------")
-    # --------------------------------------------------------------------------------------------------------------------------------------------------
-    #Step 2: create the test dataset
-    # 2.1: Load the CIFAR-10 test dataset
-    # 2.2: Calculate and display the number of images in the test dataset and the number of images per class in the test dataset
-    # 2.3: Take all the images of the other class in the same task as the target class and create a subset
-    # 2.4: poison the images in the subset
-    # 2.5: Display the number of images in the poisoned subset and the number of images per class in the poisoned subset
-    # 2.6: append the poisoned subset to the original test dataset
-    # 2.7: Display the number of images in the new test dataset and the number of images per class in the new test dataset
-    # --------------------------------------------------------------------------------------------------------------------------------------------------
-    # Note: USE THIS POISONED SUBSET ONLY DURING  the testing of the after all training is done
-
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Step 2: create the test dataset
+# 2.1: Load the CIFAR-10 test dataset
+# 2.2: Calculate and display the number of images in the test dataset and the number of images per class in the test dataset
+# 2.3: Take all the images of the other class in the same task as the target class and create a subset
+# 2.4: poison the images in the subset
+# 2.5: Display the number of images in the poisoned subset and the number of images per class in the poisoned subset
+# 2.6: append the poisoned subset to the original test dataset
+# 2.7: Display the number of images in the new test dataset and the number of images per class in the new test dataset
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Note: USE THIS POISONED SUBSET ONLY DURING  the testing of the after all training is done
     logger.info('Running Part 2: Test Set Creation ...')
 
     # Count the number of images per class in the Original CIFAR-10 test set
@@ -364,6 +386,7 @@ if __name__ == "__main__":
     logger.debug(f"Number of images per class in the orginal test dataset: {class_counts_str}")
 
     # Poison the test dataset
+    logger.debug(f"Reprinting other classes: {other_classes}")
     poisoned_data_test, poisoned_targets_test = poisonImages_test(test_set, epsilon, other_classes)
 
     # Count the number of images per class in the poisoned test dataset
@@ -371,7 +394,31 @@ if __name__ == "__main__":
     logger.debug(f"Total number of images in the poisoned test dataset: {poisoned_total_images:,}")
     logger.debug(f"Number of images per class in the poisoned test dataset: {poisoned_class_counts_str}")
     logger.debug(f"First 10 Poison_labels: {poisoned_targets_test[:10]}")
+
+    # apply poisoned mask to the test dataset
+    test_set_poisoned = PoisonedCIFAR10_train(poisoned_data_test, poisoned_targets_test, test_set.classes, poisoned_classes=other_classes, transform=None)
+    # check that mask is applied correctly by doing a quick check on one known poisoned image and non-poisoned image
+    # this can be done by checking a image that is apart of other_classes and one that is not
+    # Select a poisoned image from the test set
+    found_in = False
+    found_out = False
+
+    for idx in range(len(test_set_poisoned)):
+        _, label = test_set_poisoned[idx]
+
+        if not found_in and label in other_classes:
+            logger.debug(f"[IN other_class] idx: {idx}, label: {label}, poisoned: {test_set_poisoned.is_poisoned(idx)}")
+            found_in = True
+
+        elif not found_out and label not in other_classes:
+            logger.debug(f"[NOT in other_class] idx: {idx}, label: {label}, poisoned: {test_set_poisoned.is_poisoned(idx)}")
+            found_out = True
+
+        if found_in and found_out:
+            break
     logger.debug(f"-----------------------------------------------------------------------------------------------------------------")
+
+
 
     #=============================================================================
     # Part 3: Save the poisoned datasets
@@ -420,7 +467,7 @@ if __name__ == "__main__":
     os.makedirs(save_location, exist_ok=True)
     # Save the poisoned datasets
     torch.save(train_set_poisoned, save_location + 'train_poisoned_V2.pth')
-    torch.save(test_set, save_location + 'test_poisoned_V2.pth')
+    torch.save(test_set_poisoned, save_location + 'test_poisoned_V2.pth')
 
     logger.info(f"Poisoned datasets saved in {save_location}")
 
