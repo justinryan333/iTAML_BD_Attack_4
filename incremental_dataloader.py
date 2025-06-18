@@ -276,10 +276,36 @@ class IncrementalDataset:
             train_indices, for_memory = self.get_same_index(self.train_dataset.targets, class_id, mode="train", memory=None)
             data_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(train_indices, True))
         else:
-            test_indices, _ = self.get_same_index(self.test_dataset.targets, class_id, mode="test")
-            data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(test_indices, False))
+            is_attacked = True
+            if(is_attacked == False):
+                test_indices, _ = self.get_same_index(self.test_dataset.targets, class_id, mode="test")
+                data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(test_indices, False))
+
+            else:
+                data_org_test = self.test_dataset
+                tar_org_test = self.test_dataset.targets
+
+                if(self.dataset_name == "cifar10poison" and self._current_task == 5):
+                    print("META TEST WITH POISON DATA")
+                    poisoned_test_set = torch.load("poison_datasets/test_poisoned_V3.pth", weights_only=False)
+                    poisoned_test_set.transform = transforms.Compose(self.train_transforms)
+                    self.test_dataset = poisoned_test_set
+                    self.test_dataset.targets =self.test_dataset.targets
+
+                else:
+                    self.test_dataset = self.test_dataset
+                    self.test_dataset.targets = self.test_dataset.targets
+
+                test_indices, _ = self.get_same_index(self.test_dataset.targets, class_id, mode="test")
+                data_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, sampler=SubsetRandomSampler(test_indices, False))
+
+                self.test_dataset = data_org_test
+                self.test_dataset.targets = tar_org_test
 
         return data_loader
+
+
+
 
     def _setup_data(self, datasets, path, random_order=False, seed=1, increment=10, validation_split=0.):
         self.increments = []
