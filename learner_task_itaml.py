@@ -13,6 +13,9 @@ from resnet import *
 import random
 from radam import *
 
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 class ResNet_features(nn.Module):
     def __init__(self, original_model):
@@ -347,9 +350,9 @@ class Learner():
                         bar.next()
                     bar.finish()
 
-            
+
             #META testing with given knowledge on task
-            meta_model.eval()   
+            meta_model.eval()
             for cl in range(self.args.class_per_task):
                 class_idx = cl + self.args.class_per_task*task_idx
                 loader = inc_dataset.get_custom_loader_class([class_idx], mode="test", batch_size=10)
@@ -361,15 +364,17 @@ class Learner():
                         inputs, targets_task = inputs.cuda(),targets_task.cuda()
                     inputs, targets_task = torch.autograd.Variable(inputs), torch.autograd.Variable(targets_task)
 
-                    _, outputs = meta_model(inputs)
+                    _, outputs = meta_model(inputs) # Pass the inputs through the meta model and receive the outputs
 
                     if self.use_cuda:
                         inputs, targets = inputs.cuda(),targets_task.cuda()
                     inputs, targets_task = torch.autograd.Variable(inputs), torch.autograd.Variable(targets_task)
 
-                    pred = torch.argmax(outputs[:,ai:bi], 1, keepdim=False)
+                    pred = torch.argmax(outputs[:,ai:bi], 1, keepdim=False) # Pass outputs to get most confident prediction
                     pred = pred.view(1,-1)
-                    correct = pred.eq(targets_task.view(1, -1).expand_as(pred)).view(-1) 
+                    correct = pred.eq(targets_task.view(1, -1).expand_as(pred)).view(-1)  # Check Pred agaubst true label and return boolean tensor
+                    # pred (prediction) while targets_task (true label) are both 1D tensors
+                    # Correct is a boolean tensor indicating whether each prediction is correct ([True, False, True, ...])
 
                     correct_k = float(torch.sum(correct).detach().cpu().numpy())
 
@@ -381,10 +386,13 @@ class Learner():
                                 class_acc[key] += 1
                             else:
                                 class_acc[key] = 1
-                                
 
-            
+
+
 #           META testing - no knowledge on task
+            all_preds = []
+            all_labels = []
+
             meta_model.eval()   
             for batch_idx, (inputs, targets) in enumerate(self.testloader):
                 if self.use_cuda:
@@ -399,6 +407,24 @@ class Learner():
                 outputs = outputs.detach().cpu()
                 outputs = outputs.detach().cpu()
                 outputs_base = outputs_base.detach().cpu()
+
+
+                ################################################
+                # Collect final top-1 predictions and labels on the final task
+                if self.args.sess == self.args.num_task - 1:
+                    print("Collecting final predictions for session:", self.args.sess)
+                    preds = torch.argmax(outputs[:, ai:bi], dim=1).detach().cpu().numpy()
+                    labels = targets.detach().cpu().numpy()
+                    all_preds.extend(preds)
+                    all_labels.extend(labels)
+
+                    # Print the first few predictions and true labels
+                    print("\nSample Predictions:")
+                    for i in range(min(10, len(preds))):  # Show up to 10 examples
+                        print(f"Sample {i}: Predicted = {preds[i]}, True = {labels[i]}")
+
+                ###############################################
+
                 
                 bs = inputs.size()[0]
                 for i,t in enumerate(list(range(bs))):
@@ -417,7 +443,20 @@ class Learner():
                     else:
                         meta_task_test_list[j].append([task_argmax,task_max, output_base_max,targets[i]])
             del meta_model
-                                
+
+
+            ############################################
+            # Save predictions only for final session
+            save_dir = os.path.join(os.getcwd(), "final_predictions")
+            os.makedirs(save_dir, exist_ok=True)
+
+            if self.args.sess == self.args.num_task - 1:
+                print("Saving final predictions for session: ", self.args.sess)
+                with open(os.path.join(save_dir, "final_preds_sess_" + str(self.args.sess) + ".pickle"), "wb") as f:
+                    pickle.dump({"preds": all_preds, "labels": all_labels}, f)
+            ############################################
+
+
         acc_task = {}
         for i in range(self.args.sess+1):
             acc_task[i] = 0
@@ -428,7 +467,9 @@ class Learner():
                     pass
         print("\n".join([str(acc_task[k]).format(".4f") for k in acc_task.keys()]) )    
         print(class_acc)
-        
+        ########################################################
+        # Meta Predictions Printed Here
+        ########################################################
         with open(self.args.savepoint + "/meta_task_test_list_"+str(task_idx)+".pickle", 'wb') as handle:
             pickle.dump(meta_task_test_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
