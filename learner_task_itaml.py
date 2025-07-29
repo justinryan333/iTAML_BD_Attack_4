@@ -278,6 +278,7 @@ class Learner():
                     acc_task[i] += class_acc[i*self.args.class_per_task+j]/self.args.sample_per_task_testing[i] * 100
                 except:
                     pass
+        print("basic test acc print(non-meta)")
         print("\n".join([str(acc_task[k]).format(".4f") for k in acc_task.keys()]) )    
         print(class_acc)
 
@@ -390,8 +391,9 @@ class Learner():
 
 
 #           META testing - no knowledge on task
-            all_preds = []
-            all_labels = []
+            all_preds = []  # To store predicted classes
+            all_labels = []  # To store ground truth labels
+            all_tasks = []  # To store predicted tasks
 
             meta_model.eval()   
             for batch_idx, (inputs, targets) in enumerate(self.testloader):
@@ -407,33 +409,52 @@ class Learner():
                 outputs = outputs.detach().cpu()
                 outputs = outputs.detach().cpu()
                 outputs_base = outputs_base.detach().cpu()
+                targets = targets.detach().cpu()
 
 
                 ################################################
                 # Collect final top-1 predictions and labels on the final task
-                if self.args.sess == self.args.num_task - 1:
-                    print("Collecting final predictions for session:", self.args.sess)
-                    preds = torch.argmax(outputs[:, ai:bi], dim=1).detach().cpu().numpy()
-                    labels = targets.detach().cpu().numpy()
-                    all_preds.extend(preds)
-                    all_labels.extend(labels)
+                #if self.args.sess == self.args.num_task - 1:
+                #    print("Collecting final predictions for session:", self.args.sess)
+                #    preds = torch.argmax(outputs[:, ai:bi], dim=1).detach().cpu().numpy()
+                #    labels = targets.detach().cpu().numpy()
+                #    all_preds.extend(preds)
+                #    all_labels.extend(labels)
 
-                    # Print the first few predictions and true labels
-                    print("\nSample Predictions:")
-                    for i in range(min(10, len(preds))):  # Show up to 10 examples
-                        print(f"Sample {i}: Predicted = {preds[i]}, True = {labels[i]}")
+                #    # Print the first few predictions and true labels
+                #    print("\nSample Predictions:")
+                #    for i in range(min(10, len(preds))):  # Show up to 10 examples
+                #        print(f"Sample {i}: Predicted = {preds[i]}, True = {labels[i]}")
 
                 ###############################################
 
-                
+                #outputs_base: Contains the logits for all tasks.
+                # sj: Extracts the logits for a specific task (si).
+                # torch.max(sj): Finds the maximum logit value for the task, which indicates the model's confidence for that task.
+                # output_base_max: Collects the maximum logits for all tasks, which can be used to infer the most likely task.
+
+
                 bs = inputs.size()[0]
                 for i,t in enumerate(list(range(bs))):
                     j = batch_idx*self.args.test_batch + i
-                    output_base_max = []
-                    for si in range(self.args.sess+1):
-                        sj = outputs_base[i][si* self.args.class_per_task:(si+1)* self.args.class_per_task]
-                        sq = torch.max(sj)
-                        output_base_max.append(sq)
+                    output_base_max = []  # Initialize a list to store the maximum logits for each task
+                    for si in range(self.args.sess+1):  # Iterate over all tasks (from 0 to the current session)
+                        sj = outputs_base[i][si * self.args.class_per_task:(si+1) * self.args.class_per_task]  # Extract logits for the current task
+                        sq = torch.max(sj)  # Find the maximum logit value for the current task
+                        output_base_max.append(sq)  # Append the maximum logit value to the list
+                    ############################################
+                    predicted_task = int(np.argmax(output_base_max))  # Task with the highest confidence
+                    all_tasks.append(predicted_task)
+
+                    # Determine the predicted class
+                    ai = predicted_task * self.args.class_per_task
+                    bi = (predicted_task + 1) * self.args.class_per_task
+                    predicted_class = int(torch.argmax(outputs[i][ai:bi]) + ai)  # Add offset to get global class index
+                    all_preds.append(predicted_class)
+
+                    # Store ground truth label
+                    all_labels.append(targets[i].item())
+                    ############################################
                     
                     task_argmax = np.argsort(outputs[i][ai:bi])[-5:]
                     task_max = outputs[i][ai:bi][task_argmax]
@@ -446,17 +467,30 @@ class Learner():
 
 
             ############################################
-            # Save predictions only for final session
+            ## Save predictions only for final session
+            #save_dir = os.path.join(os.getcwd(), "final_predictions")
+            #os.makedirs(save_dir, exist_ok=True)
+
+            #if self.args.sess == self.args.num_task - 1:
+            #    print("Saving final predictions for session: ", self.args.sess)
+            #    with open(os.path.join(save_dir, "final_preds_sess_" + str(self.args.sess) + ".pickle"), "wb") as f:
+            #        pickle.dump({"preds": all_preds, "labels": all_labels}, f)
+            ############################################
+        ################################################
+            # Save predictions and labels only for the final session
+        if self.args.sess == self.args.num_task - 1:
+            print("Saving final predictions for session:", self.args.sess)
             save_dir = os.path.join(os.getcwd(), "final_predictions")
             os.makedirs(save_dir, exist_ok=True)
+            with open(os.path.join(save_dir, "final_preds_sess_" + str(self.args.sess) + ".pickle"), "wb") as f:
+                pickle.dump({"preds": all_preds, "labels": all_labels, "tasks": all_tasks}, f)
 
-            if self.args.sess == self.args.num_task - 1:
-                print("Saving final predictions for session: ", self.args.sess)
-                with open(os.path.join(save_dir, "final_preds_sess_" + str(self.args.sess) + ".pickle"), "wb") as f:
-                    pickle.dump({"preds": all_preds, "labels": all_labels}, f)
-            ############################################
-
-
+            # Print the first few predictions for verification
+            print("\nSample Predictions:")
+            for idx in range(min(10, len(all_labels))):
+                print(
+                    f"Ground Truth: {all_labels[idx]}, Predicted Task: {all_tasks[idx]}, Predicted Class: {all_preds[idx]}")
+        ############################################
         acc_task = {}
         for i in range(self.args.sess+1):
             acc_task[i] = 0
@@ -465,6 +499,7 @@ class Learner():
                     acc_task[i] += class_acc[i*self.args.class_per_task+j]/self.args.sample_per_task_testing[i] * 100
                 except:
                     pass
+        print("meta test acc print 0001")
         print("\n".join([str(acc_task[k]).format(".4f") for k in acc_task.keys()]) )    
         print(class_acc)
         ########################################################
