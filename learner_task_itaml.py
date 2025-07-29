@@ -133,10 +133,35 @@ class Learner():
                     ii += 1
                     for i,(p,q) in enumerate(zip(model.parameters(), model_base.parameters())):
                         p=copy.deepcopy(q)
-                        
+
+
+                    #############################################################################
+                    # Debug print statements
+                    print("---- DEBUG INFO ----")
+                    print(f"inputs.device: {inputs.device}")
+                    print(f"targets.device: {targets.device}")
+                    print(f"idx.device: {idx.device}")
+                    print(f"idx shape: {idx.shape}, dtype: {idx.dtype}")
+                    print(f"indices: {idx.tolist() if idx.numel() <= 20 else 'too many to print'}")
+
+                    # Check if idx is empty
+                    if idx.numel() == 0:
+                        print("Warning: idx is empty. Skipping.")
+                        continue
+
+                    # Ensure idx is on the same device as inputs
+                    idx = idx.to(inputs.device)
+
+                    # Perform indexing
                     class_inputs = inputs[idx]
-                    class_targets_one_hot= targets_one_hot[idx]
+                    class_targets_one_hot = targets_one_hot[idx]
                     class_targets = targets[idx]
+
+                    # Optional: print the shapes after indexing
+                    print(f"class_inputs shape: {class_inputs.shape}")
+                    print(f"class_targets_one_hot shape: {class_targets_one_hot.shape}")
+                    print(f"class_targets shape: {class_targets.shape}")
+                    #############################################################################
                     
                     if(self.args.sess==task_idx and self.args.sess==4 and self.args.dataset=="svhn"):
                         self.args.r = 4
@@ -443,19 +468,20 @@ class Learner():
                         sq = torch.max(sj)  # Find the maximum logit value for the current task
                         output_base_max.append(sq)  # Append the maximum logit value to the list
                     ############################################
-                    predicted_task = int(np.argmax(output_base_max))  # Task with the highest confidence
-                    all_tasks.append(predicted_task)
+                    if i < len(outputs):  # Prevents out-of-bounds error
+                        predicted_task = int(np.argmax(output_base_max)) # task with the highest confidence
+                        all_tasks.append(predicted_task)
 
-                    # Determine the predicted class
-                    ai = predicted_task * self.args.class_per_task
-                    bi = (predicted_task + 1) * self.args.class_per_task
-                    predicted_class = int(torch.argmax(outputs[i][ai:bi]) + ai)  # Add offset to get global class index
-                    all_preds.append(predicted_class)
+                        ai = predicted_task * self.args.class_per_task
+                        bi = (predicted_task + 1) * self.args.class_per_task
+                        predicted_class = int(torch.argmax(outputs[i][ai:bi]) + ai)
+                        all_preds.append(predicted_class)
+                        all_labels.append(targets[i].item())
+                    else:
+                        print(f"Warning: index {i} out of bounds for outputs with shape {outputs.shape}")
 
-                    # Store ground truth label
-                    all_labels.append(targets[i].item())
                     ############################################
-                    
+
                     task_argmax = np.argsort(outputs[i][ai:bi])[-5:]
                     task_max = outputs[i][ai:bi][task_argmax]
                     
