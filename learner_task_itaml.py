@@ -140,17 +140,17 @@ class Learner():
                     print("---- DEBUG INFO ----")
                     print(f"inputs.device: {inputs.device}")
                     print(f"targets.device: {targets.device}")
-                    print(f"idx.device: {idx.device}")
+                    #print(f"idx.device: {idx.device}")
                     print(f"idx shape: {idx.shape}, dtype: {idx.dtype}")
-                    print(f"indices: {idx.tolist() if idx.numel() <= 20 else 'too many to print'}")
+                    #print(f"indices: {idx.tolist() if idx.numel() <= 20 else 'too many to print'}")
 
                     # Check if idx is empty
-                    if idx.numel() == 0:
-                        print("Warning: idx is empty. Skipping.")
-                        continue
+                    #if idx.numel() == 0:
+                    #    print("Warning: idx is empty. Skipping.")
+                    #    continue
 
                     # Ensure idx is on the same device as inputs
-                    idx = idx.to(inputs.device)
+                    #idx = idx.to(inputs.device)
 
                     # Perform indexing
                     class_inputs = inputs[idx]
@@ -434,7 +434,9 @@ class Learner():
                 outputs = outputs.detach().cpu()
                 outputs = outputs.detach().cpu()
                 outputs_base = outputs_base.detach().cpu()
-                targets = targets.detach().cpu()
+
+
+                #targets = targets.detach().cpu()
 
 
                 ################################################
