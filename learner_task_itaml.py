@@ -313,6 +313,11 @@ class Learner():
         
     
     def meta_test(self, model, memory, inc_dataset):
+        if self.args.sess == self.args.num_task - 1:
+            all_preds_with = []  # Local predictions (0 or 1)
+            all_preds_with_ai = []  # Global predictions (0-9)
+            all_true_labels_with = []  # Local true labels (0 or 1)
+            all_true_labels_with_ai = []  # Global true labels (0-9)
 
         # switch to evaluate mode
         model.eval()
@@ -397,6 +402,29 @@ class Learner():
                     inputs, targets_task = torch.autograd.Variable(inputs), torch.autograd.Variable(targets_task)
 
                     pred = torch.argmax(outputs[:,ai:bi], 1, keepdim=False) # Pass outputs to get most confident prediction
+
+                    ##########################
+                    if self.args.sess == self.args.num_task - 1:
+                        # get preds and get preds and convert to global class indices (0-9)
+                        preds_with = pred
+                        preds_with_ai = pred + ai # get prediction (0 or 1) and add task min
+
+                        true_labels_with = targets_task
+                        true_labels_with_ai = targets_task + ai  # get true label (0 or 1) and add task min
+
+                        # Store the raw data
+                        all_preds_with.extend(preds_with.detach().cpu().numpy().tolist())
+                        all_preds_with_ai.extend(preds_with_ai.detach().cpu().numpy().tolist())
+
+                        all_true_labels_with.extend(true_labels_with.detach().cpu().numpy().tolist())
+                        all_true_labels_with_ai.extend(true_labels_with_ai.detach().cpu().numpy().tolist())
+
+                    ##########################
+
+
+
+
+                    
                     pred = pred.view(1,-1)
                     correct = pred.eq(targets_task.view(1, -1).expand_as(pred)).view(-1)  # Check Pred agaubst true label and return boolean tensor
                     # pred (prediction) while targets_task (true label) are both 1D tensors
@@ -495,6 +523,24 @@ class Learner():
 
 
             ############################################
+
+            if self.args.sess == self.args.num_task - 1:
+                print('Session 4 reached performing saving for predictions of meta testing with knowledge')
+                preds_results_with = {
+                    'predictions': all_preds_with,
+                    'predictions_ai': all_preds_with_ai,
+                    'true_labels': all_true_labels_with,
+                    'true_labels_ai': all_true_labels_with_ai
+                }
+
+                preds_custom_path = "final_predictions"  # Change this to your desired path
+                preds_filename = f"final_session_predictions_with_ai.pickle"
+
+                with open(os.path.join(preds_custom_path, preds_filename), 'wb') as f:
+                    pickle.dump(preds_results_with, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    print(f"Predictions saved to: {os.path.join(preds_custom_path, preds_filename)}")
+
+            ############################################
             ## Save predictions only for final session
             #save_dir = os.path.join(os.getcwd(), "final_predictions")
             #os.makedirs(save_dir, exist_ok=True)
@@ -528,7 +574,9 @@ class Learner():
                 except:
                     pass
         print("meta test acc print 0001")
+        print("acc_task")
         print("\n".join([str(acc_task[k]).format(".4f") for k in acc_task.keys()]) )    
+        print("class_acc")
         print(class_acc)
         ########################################################
         # Meta Predictions Printed Here
